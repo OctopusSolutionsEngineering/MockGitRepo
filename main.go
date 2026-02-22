@@ -449,7 +449,7 @@ func gitHTTPBackend(c *gin.Context) {
 	}
 
 	// Extract username from Authorization header
-	username := extractUsername(c)
+	username := extractUsername(c) + c.Param("id")
 
 	// Check temporary directory size if it exists
 	if !checkTempDirSize(c, username) {
@@ -632,6 +632,10 @@ func main() {
 	// Git HTTP backend routes
 	// Match all Git HTTP protocol routes
 	router.Any("/repo/*path", gitHTTPBackend)
+
+	// This allows us to insert a random id into the URL, which bypasses
+	// the constraint in Octopus where a git repo can only be used one.
+	router.Any("/repo/:id/*path", gitHTTPBackend)
 
 	logger.Info("Starting HTTP server", zap.String("port", "8080"))
 	// Start the server on port 8080
