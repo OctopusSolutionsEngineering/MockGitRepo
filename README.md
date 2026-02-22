@@ -1,7 +1,28 @@
 A mock Git server that create disposable Git repos for testing.
 
+Each user gets a unique copy of the sample repositories. The service accepts any username and password.
+
+The repo copies are created when they are first accessed, so the workflow is:
+
+1. Clone a repo with a unique username (e.g. `git clone http://myusername@localhost:8080/repo/platformhubrepo`)
+2. The server creates a user specific copy of the repo for `myusername` and serves it to the client
+3. The client can interact with the repo as normal (e.g. `git add`, `git commit`, `git push`), and the changes will be stored in the user specific copy of the repo
+4. After 90 minutes, the repo is deleted and the next time the user accesses the repo, a new copy will be created from the template
+
 The sample repos exist in `repotemplate.tar.bz2`. This is to prevent Git from complaining about nested Git repositories in the project. 
 The `unpacktemplate.sh` and `packtemplate.sh` scripts are used to unpack and pack the template repository.
+
+## Repos
+
+* `platformhubrepo`: A sample Octopus Platform Hub repo
+* `projectrepo`: A sample Octopus CaC project configured to use the process template in `platformhubrepo`
+* `blank#`: Blank repos. Replace `#` with a number between 1 and 10.
+
+Repos are cloned with the commane:
+
+```bash
+git clone https://<unique user name>@mockgitserver.orangegrass-c0938ea8.westus2.azurecontainerapps.io/repo/<repo name>
+```
 
 ## Usage
 
@@ -40,7 +61,7 @@ docker run -d --name mockgitserver -p 8080:8080 mockgitserver
 
 ## Using the hosted version
 
-This application is hosted on Azure:
+This application is hosted on Azure. The follow commands demonstrate how you can clone and then interact with the repo.
 
 ```bash
 git clone https://blahblah@mockgitserver.orangegrass-c0938ea8.westus2.azurecontainerapps.io/repo/platformhubrepo
@@ -50,14 +71,6 @@ git add newfile.txt
 git commit -m "Add new file to test commit"
 git push origin master
 ```
-
-## CI/CD
-
-The project includes a GitHub Actions workflow that automatically:
-- Builds the Docker image for AMD64 and ARM64 architectures
-- Pushes the image to GitHub Container Registry (GHCR)
-- Tags images appropriately based on branches, tags, and commits
-- Runs on push to main/master branches, tags, and pull requests
 
 ## Adding new sample repos
 
