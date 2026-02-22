@@ -286,12 +286,110 @@ func getGitProjectRoot() string {
 	return gitProjectRoot
 }
 
+// limitTempDirs ensures there are no more than maxDirs temp directories
+// by deleting the oldest directories if the limit is exceeded
+func limitTempDirs(maxDirs int) {
+	tmpDir := "/tmp"
+	prefix := "git-repo-"
+
+	logger.Debug("Checking temp directory count limit",
+		zap.Int("maxDirs", maxDirs))
+
+	// Read all entries in /tmp
+	entries, err := os.ReadDir(tmpDir)
+	if err != nil {
+		logger.Error("Failed to read tmp directory", zap.Error(err))
+		return
+	}
+
+	// Collect all git-repo directories with their modification times
+	type dirInfo struct {
+		name    string
+		modTime time.Time
+	}
+	var gitRepoDirs []dirInfo
+
+	for _, entry := range entries {
+		// Check if it's a directory and starts with the prefix
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), prefix) {
+			continue
+		}
+
+		// Get full path
+		fullPath := filepath.Join(tmpDir, entry.Name())
+
+		// Get directory info to check modification time
+		info, err := os.Stat(fullPath)
+		if err != nil {
+			logger.Warn("Failed to stat temp directory",
+				zap.String("path", fullPath),
+				zap.Error(err))
+			continue
+		}
+
+		gitRepoDirs = append(gitRepoDirs, dirInfo{
+			name:    entry.Name(),
+			modTime: info.ModTime(),
+		})
+	}
+
+	// Check if we have more than maxDirs directories
+	dirCount := len(gitRepoDirs)
+	if dirCount <= maxDirs {
+		logger.Debug("Temp directory count within limit",
+			zap.Int("count", dirCount),
+			zap.Int("limit", maxDirs))
+		return
+	}
+
+	logger.Info("Temp directory count exceeds limit, cleaning up",
+		zap.Int("count", dirCount),
+		zap.Int("limit", maxDirs),
+		zap.Int("toDelete", dirCount-maxDirs))
+
+	// Sort directories by modification time (oldest first)
+	// Using a simple bubble sort for clarity
+	for i := 0; i < len(gitRepoDirs)-1; i++ {
+		for j := 0; j < len(gitRepoDirs)-i-1; j++ {
+			if gitRepoDirs[j].modTime.After(gitRepoDirs[j+1].modTime) {
+				gitRepoDirs[j], gitRepoDirs[j+1] = gitRepoDirs[j+1], gitRepoDirs[j]
+			}
+		}
+	}
+
+	// Delete oldest directories until we're at the limit
+	numToDelete := dirCount - maxDirs
+	deletedCount := 0
+
+	for i := 0; i < numToDelete; i++ {
+		fullPath := filepath.Join(tmpDir, gitRepoDirs[i].name)
+		err := os.RemoveAll(fullPath)
+		if err != nil {
+			logger.Error("Failed to remove old temp directory",
+				zap.String("path", fullPath),
+				zap.Error(err))
+		} else {
+			logger.Info("Removed old temp directory to enforce limit",
+				zap.String("path", fullPath),
+				zap.Time("modTime", gitRepoDirs[i].modTime))
+			deletedCount++
+		}
+	}
+
+	logger.Info("Temp directory limit enforcement completed",
+		zap.Int("deletedCount", deletedCount),
+		zap.Int("remaining", dirCount-deletedCount))
+}
+
 // gitHTTPBackend handles Git HTTP requests using git-http-backend CGI
 func gitHTTPBackend(c *gin.Context) {
 	logger.Info("Git HTTP request received",
 		zap.String("method", c.Request.Method),
 		zap.String("path", c.Param("path")),
 		zap.String("clientIP", c.ClientIP()))
+
+	// Limit the number of temp directories to 20
+	limitTempDirs(20)
 
 	// Check if Authorization header is present
 	if c.GetHeader("Authorization") == "" {
