@@ -295,7 +295,7 @@ func gitHTTPBackend(c *gin.Context) {
 	repoPath := filepath.Join(gitProjectRoot, "repotemplate")
 
 	// Copy repository to temporary directory
-	tempRepoPath, err := copyRepoToTemp("repotemplate", username)
+	tempRepoPath, err := copyRepoToTemp(repoPath, username)
 	if err != nil {
 		logger.Error("Failed to copy repository to temp",
 			zap.String("repoPath", repoPath),

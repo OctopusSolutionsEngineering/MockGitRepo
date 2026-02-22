@@ -31,7 +31,7 @@ COPY --from=builder /build/gin-git-server /usr/local/bin/gin-git-server
 
 # Create git repository directory and copy repository
 RUN mkdir -p /data/repos
-COPY repotemplate /data/repos
+COPY repotemplate /data/repos/repotemplate
 
 # Run the application
 CMD ["/usr/local/bin/gin-git-server"]
