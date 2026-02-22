@@ -12,6 +12,15 @@ The repo copies are created when they are first accessed, so the workflow is:
 The sample repos exist in `repotemplate.tar.bz2`. This is to prevent Git from complaining about nested Git repositories in the project. 
 The `unpacktemplate.sh` and `packtemplate.sh` scripts are used to unpack and pack the template repository.
 
+## Using for Octopus Demos
+
+1. Configure the platform hub repo to https://mockgitserver.orangegrass-c0938ea8.westus2.azurecontainerapps.io/repo/platformhubrepo
+2. Use a unique username and any password
+3. Publish and share the process templates
+4. Create a CaC project pointing to https://mockgitserver.orangegrass-c0938ea8.westus2.azurecontainerapps.io/repo/projectrepo
+5. Use a unique username and any password
+6. You now how a sample platform hub and sample project that can be edited and committed to without affecting other users. The repos will be automatically cleaned up after 90 minutes of inactivity.
+
 ## Repos
 
 * `platformhubrepo`: A sample Octopus Platform Hub repo
