@@ -25,7 +25,7 @@ The `unpacktemplate.sh` and `packtemplate.sh` scripts are used to unpack and pac
 
 Octopus has a restriction that means a git repo can only be used by one project in any space.
 
-This can be worked around by pointing the project to the repo `https://mockgitserver.orangegrass-c0938ea8.westus2.azurecontainerapps.io/repo/<id>/projectrepo`, where `<id>` is a unique identifier (e.g. a number). This way, each project can have its own copy of the repo, and they won't conflict with each other.
+This can be worked around by pointing the project to the repo `https://mockgitserver.orangegrass-c0938ea8.westus2.azurecontainerapps.io/uniquerepo/id/projectrepo`, where `<id>` is a unique identifier (e.g. a number). This way, each project can have its own copy of the repo, and they won't conflict with each other.
 
 ## Repos
 

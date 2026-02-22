@@ -639,7 +639,7 @@ func main() {
 
 	// This allows us to insert a random id into the URL, which bypasses
 	// the constraint in Octopus where a git repo can only be used one.
-	router.Any("/repo/:id/*path", gitHTTPBackend)
+	router.Any("/uniquerepo/:id/*path", gitHTTPBackend)
 
 	logger.Info("Starting HTTP server", zap.String("port", "8080"))
 	// Start the server on port 8080
