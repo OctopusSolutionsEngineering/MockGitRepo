@@ -38,6 +38,19 @@ Run the locally built image:
 docker run -d --name mockgitserver -p 8080:8080 mockgitserver
 ```
 
+## Using the hosted version
+
+This application is hosted on Azure:
+
+```bash
+git clone https://blahblah@mockgitserver.orangegrass-c0938ea8.westus2.azurecontainerapps.io/repo/platformhubrepo
+cd platformhubrepo
+touch newfile.txt
+git add newfile.txt
+git commit -m "Add new file to test commit"
+git push origin master
+```
+
 ## CI/CD
 
 The project includes a GitHub Actions workflow that automatically:
