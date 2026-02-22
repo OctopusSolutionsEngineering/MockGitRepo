@@ -67,6 +67,7 @@ The project includes a GitHub Actions workflow that automatically:
 4. Run `git config http.receivepack true` in the new directory
 5. Add template files
 6. Run `git add .` and `git commit -m "Add new sample repo"`
+7. Run `git checkout -b main` to create the main branch
 7. Run `git config --bool core.bare true`
 8. Run `packtemplate.sh` to pack the template repo into `repotemplate.tar.bz2`
 
