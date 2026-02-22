@@ -12,5 +12,5 @@ Clone the repository:
 
 ```bash
 cd /tmp
-git clone myusername:password@http://localhost:8080/platformhubrepo
+git clone @http://myusername@localhost:8080/platformhubrepo
 ```

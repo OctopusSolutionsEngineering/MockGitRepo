@@ -172,14 +172,13 @@ func copyFile(src, dst string) error {
 
 // setupCGIEnvironment configures the CGI environment variables for git-http-backend
 func setupCGIEnvironment(c *gin.Context, tempRepoPath string) []string {
-	env := os.Environ()
+	env := []string{}
 	env = append(env, "REQUEST_METHOD="+c.Request.Method)
 	env = append(env, "QUERY_STRING="+c.Request.URL.RawQuery)
 	env = append(env, "CONTENT_TYPE="+c.GetHeader("Content-Type"))
 
 	// Use the repository name from the path parameter
-	repoName := filepath.Base(c.Param("path"))
-	env = append(env, "PATH_INFO="+"/"+repoName)
+	env = append(env, "PATH_INFO="+c.Param("path"))
 
 	env = append(env, "REMOTE_USER="+c.GetHeader("Remote-User"))
 	env = append(env, "REMOTE_ADDR="+c.ClientIP())
@@ -260,17 +259,6 @@ func parseStatusCode(c *gin.Context) int {
 	return statusCode
 }
 
-// extractFirstDirectory extracts the first directory from the path parameter
-func extractFirstDirectory(path string) string {
-	fullPath := strings.TrimPrefix(path, "/")
-	pathParts := strings.Split(fullPath, "/")
-	firstDir := ""
-	if len(pathParts) > 0 {
-		firstDir = pathParts[0]
-	}
-	return firstDir
-}
-
 // getGitProjectRoot returns the git project root from environment variable or default
 func getGitProjectRoot() string {
 	gitProjectRoot := os.Getenv("GIT_PROJECT_ROOT")
@@ -303,14 +291,11 @@ func gitHTTPBackend(c *gin.Context) {
 	// Get the original repository path
 	gitProjectRoot := getGitProjectRoot()
 
-	// Extract the first directory from the path parameter
-	firstDir := extractFirstDirectory(c.Param("path"))
-
 	// Construct the full path to the repository using only the first directory
-	repoPath := filepath.Join(gitProjectRoot, firstDir)
+	repoPath := filepath.Join(gitProjectRoot, "repotemplate")
 
 	// Copy repository to temporary directory
-	tempRepoPath, err := copyRepoToTemp(repoPath, username)
+	tempRepoPath, err := copyRepoToTemp("repotemplate", username)
 	if err != nil {
 		logger.Error("Failed to copy repository to temp",
 			zap.String("repoPath", repoPath),
@@ -447,9 +432,11 @@ func startCleanupWorker() {
 }
 
 func main() {
-	// Initialize logger with plain text output
+	// Initialize logger with plain text output and no stack traces
 	var err error
-	logger, err = zap.NewDevelopment()
+	config := zap.NewDevelopmentConfig()
+	config.DisableStacktrace = true
+	logger, err = config.Build()
 	if err != nil {
 		panic("Failed to initialize logger: " + err.Error())
 	}
