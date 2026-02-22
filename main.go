@@ -18,6 +18,7 @@ import (
 
 const (
 	gitHTTPBackendPath = "/usr/libexec/git-core/git-http-backend"
+	maxRequestSize     = 128 * 1024 // 128KB in bytes
 )
 
 var logger *zap.Logger
@@ -287,6 +288,16 @@ func gitHTTPBackend(c *gin.Context) {
 
 	// Extract username from Authorization header
 	username := extractUsername(c)
+
+	// Check request size limit (128KB)
+	if c.Request.ContentLength > maxRequestSize {
+		logger.Warn("Request size exceeds limit",
+			zap.Int64("contentLength", c.Request.ContentLength),
+			zap.Int64("maxSize", maxRequestSize),
+			zap.String("clientIP", c.ClientIP()))
+		c.String(http.StatusBadRequest, "Request size exceeds maximum allowed size of 128KB")
+		return
+	}
 
 	// Get the original repository path
 	gitProjectRoot := getGitProjectRoot()
