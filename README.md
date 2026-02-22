@@ -21,6 +21,12 @@ The `unpacktemplate.sh` and `packtemplate.sh` scripts are used to unpack and pac
 5. Use a unique username and any password
 6. You now how a sample platform hub and sample project that can be edited and committed to without affecting other users. The repos will be automatically cleaned up after 90 minutes of inactivity.
 
+## Working around the unique git repo limitation in Octopus
+
+Octopus has a restriction that means a git repo can only be used by one project in any space.
+
+This can be worked around by pointing the project to the repo `https://mockgitserver.orangegrass-c0938ea8.westus2.azurecontainerapps.io/repo/<id>/projectrepo`, where `<id>` is a unique identifier e(.g. a number). This way, each project can have its own copy of the repo, and they won't conflict with each other.
+
 ## Repos
 
 * `platformhubrepo`: A sample Octopus Platform Hub repo
