@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -19,9 +18,8 @@ import (
 
 const (
 	gitHTTPBackendPath = "/usr/libexec/git-core/git-http-backend"
-	maxRequestSize     = 128 * 1024       // 128KB in bytes
-	maxTempDirSize     = 5 * 1024 * 1024  // 5MB in bytes
-	deleteTempDirSize  = 10 * 1024 * 1024 // 10MB in bytes
+	maxRequestSize     = 128 * 1024 // 128KB in bytes
+	gitRepoPrefix      = "git-repo-"
 )
 
 var logger *zap.Logger
@@ -64,29 +62,17 @@ func extractUsername(c *gin.Context) string {
 
 // copyRepoToTemp copies the repository directory to a temporary directory
 // Returns the path to the temporary directory
-func copyRepoToTemp(repoPath string, username string) (string, error) {
+func copyRepoToTemp(repoPath string) (string, error) {
 	// Create a temporary directory
-	tempDir := "/tmp/git-repo-" + username
+	tempDir, err := os.MkdirTemp("", gitRepoPrefix+"*")
 
-	// Check if the target directory already exists
-	if _, err := os.Stat(tempDir); err == nil {
-		logger.Info("Temp directory already exists, skipping copy",
-			zap.String("tempDir", tempDir),
-			zap.String("username", username))
-		return tempDir, nil
+	if err != nil {
+		logger.Error("Failed to create temp directory", zap.Error(err))
+		return "", err
 	}
 
 	logger.Info("Copying repository to temp directory",
-		zap.String("repoPath", repoPath),
-		zap.String("username", username))
-
-	err := os.Mkdir(tempDir, 0770)
-	if err != nil {
-		logger.Error("Failed to create temp directory",
-			zap.String("tempDir", tempDir),
-			zap.Error(err))
-		return "", err
-	}
+		zap.String("repoPath", repoPath))
 
 	// Copy the repository to the temp directory
 	err = copyDir(repoPath, tempDir)
@@ -263,21 +249,6 @@ func parseStatusCode(c *gin.Context) int {
 	return statusCode
 }
 
-// getDirSize calculates the total size of a directory in bytes
-func getDirSize(path string) (int64, error) {
-	var size int64
-	err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() {
-			size += info.Size()
-		}
-		return nil
-	})
-	return size, err
-}
-
 // getGitProjectRoot returns the git project root from environment variable or default
 func getGitProjectRoot() string {
 	gitProjectRoot := os.Getenv("GIT_PROJECT_ROOT")
@@ -287,58 +258,10 @@ func getGitProjectRoot() string {
 	return gitProjectRoot
 }
 
-// checkTempDirSize checks if a temp directory exists and validates its size
-// Returns true if the request should continue, false if it should be aborted
-func checkTempDirSize(c *gin.Context, username string) bool {
-	tempDir := "/tmp/git-repo-" + username
-	if _, err := os.Stat(tempDir); err == nil {
-		// Directory exists, check its size
-		dirSize, err := getDirSize(tempDir)
-		if err != nil {
-			logger.Error("Failed to calculate temp directory size",
-				zap.String("tempDir", tempDir),
-				zap.Error(err))
-		} else {
-			logger.Debug("Temp directory size check",
-				zap.String("tempDir", tempDir),
-				zap.Int64("size", dirSize),
-				zap.Float64("sizeMB", float64(dirSize)/(1024*1024)))
-
-			// If size > 10MB, delete the directory
-			if dirSize > deleteTempDirSize {
-				logger.Warn("Temp directory exceeds 10MB, deleting",
-					zap.String("tempDir", tempDir),
-					zap.Int64("size", dirSize),
-					zap.Float64("sizeMB", float64(dirSize)/(1024*1024)))
-				err := os.RemoveAll(tempDir)
-				if err != nil {
-					logger.Error("Failed to delete oversized temp directory",
-						zap.String("tempDir", tempDir),
-						zap.Error(err))
-				} else {
-					logger.Info("Deleted oversized temp directory",
-						zap.String("tempDir", tempDir))
-				}
-			} else if dirSize > maxTempDirSize {
-				// If size > 5MB but <= 10MB, return 400 error
-				logger.Warn("Temp directory exceeds 5MB limit",
-					zap.String("tempDir", tempDir),
-					zap.Int64("size", dirSize),
-					zap.Float64("sizeMB", float64(dirSize)/(1024*1024)),
-					zap.String("clientIP", c.ClientIP()))
-				c.String(http.StatusBadRequest, "Temporary directory size exceeds maximum allowed size of 5MB")
-				return false
-			}
-		}
-	}
-	return true
-}
-
 // limitTempDirs ensures there are no more than maxDirs temp directories
 // by deleting the oldest directories if the limit is exceeded
 func limitTempDirs(maxDirs int) {
 	tmpDir := "/tmp"
-	prefix := "git-repo-"
 
 	logger.Debug("Checking temp directory count limit",
 		zap.Int("maxDirs", maxDirs))
@@ -359,7 +282,7 @@ func limitTempDirs(maxDirs int) {
 
 	for _, entry := range entries {
 		// Check if it's a directory and starts with the prefix
-		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), prefix) {
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), gitRepoPrefix) {
 			continue
 		}
 
@@ -449,17 +372,6 @@ func gitHTTPBackend(c *gin.Context) {
 		return
 	}
 
-	// Extract username from Authorization header
-	// Remove all non-alphanumeric characters from id using regex
-	reg := regexp.MustCompile("[^a-zA-Z0-9]+")
-	cleanedID := reg.ReplaceAllString(c.Param("id"), "")
-	username := extractUsername(c) + cleanedID
-
-	// Check temporary directory size if it exists
-	if !checkTempDirSize(c, username) {
-		return
-	}
-
 	// Check request size limit (128KB)
 	if c.Request.ContentLength > maxRequestSize {
 		logger.Warn("Request size exceeds limit",
@@ -477,7 +389,7 @@ func gitHTTPBackend(c *gin.Context) {
 	repoPath := filepath.Join(gitProjectRoot, "repotemplate")
 
 	// Copy repository to temporary directory
-	tempRepoPath, err := copyRepoToTemp(repoPath, username)
+	tempRepoPath, err := copyRepoToTemp(repoPath)
 	if err != nil {
 		logger.Error("Failed to copy repository to temp",
 			zap.String("repoPath", repoPath),
@@ -485,6 +397,19 @@ func gitHTTPBackend(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "Failed to copy repository: %s", err)
 		return
 	}
+
+	// Defer deletion of the temporary directory
+	defer func() {
+		err := os.RemoveAll(tempRepoPath)
+		if err != nil {
+			logger.Error("Failed to delete temp directory",
+				zap.String("tempRepoPath", tempRepoPath),
+				zap.Error(err))
+		} else {
+			logger.Info("Deleted temp directory",
+				zap.String("tempRepoPath", tempRepoPath))
+		}
+	}()
 
 	logger.Debug("Executing git-http-backend",
 		zap.String("tempRepoPath", tempRepoPath))
@@ -641,9 +566,15 @@ func main() {
 	// the constraint in Octopus where a git repo can only be used one.
 	router.Any("/uniquerepo/:id/*path", gitHTTPBackend)
 
-	logger.Info("Starting HTTP server", zap.String("port", "8080"))
-	// Start the server on port 8080
-	if err := router.Run(":8080"); err != nil {
+	// Get port from environment variable or default to 8080
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	logger.Info("Starting HTTP server", zap.String("port", port))
+	// Start the server
+	if err := router.Run(":" + port); err != nil {
 		logger.Fatal("Failed to start server", zap.Error(err))
 	}
 }
