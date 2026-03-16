@@ -30,6 +30,25 @@ func CopyRepoToTemp(repoPath string, fixedLocation bool, fixedPath string) (stri
 	var tempDir string
 	if fixedLocation {
 		tempDir = filepath.Join(os.TempDir(), fixedPath)
+
+		// Early exit if the directory already exists to avoid unnecessary copying and potential conflicts
+		_, err := os.Stat(tempDir)
+		if err != nil {
+			// We expect an error when the directory doesn't exist,
+			// but if it's a different error, we should return it
+			if !errors.Is(err, os.ErrNotExist) {
+				return "", err
+			}
+
+			// Create the directory if it doesn't exist
+			mkdirErr := os.MkdirAll(tempDir, 0755)
+			if mkdirErr != nil {
+				return "", mkdirErr
+			}
+		} else {
+			// The directory already exists, so we can skip copying and return it directly
+			return tempDir, nil
+		}
 	} else {
 		// Create a temporary directory
 		var err error
@@ -41,29 +60,11 @@ func CopyRepoToTemp(repoPath string, fixedLocation bool, fixedPath string) (stri
 		}
 	}
 
-	_, err := os.Stat(tempDir)
-	if err != nil {
-		// We expect an error when the directory doesn't exist,
-		// but if it's a different error, we should return it
-		if !errors.Is(err, os.ErrNotExist) {
-			return "", err
-		}
-
-		// Create the directory if it doesn't exist
-		mkdirErr := os.MkdirAll(tempDir, 0755)
-		if mkdirErr != nil {
-			return "", mkdirErr
-		}
-	} else {
-		// The directory already exists, so we can skip copying and return it directly
-		return tempDir, nil
-	}
-
 	logging.Logger.Info("Copying repository to temp directory",
 		zap.String("repoPath", repoPath))
 
 	// Copy the repository to the temp directory
-	err = CopyDir(repoPath, tempDir)
+	err := CopyDir(repoPath, tempDir)
 	if err != nil {
 		logging.Logger.Error("Failed to copy repository",
 			zap.String("src", repoPath),
