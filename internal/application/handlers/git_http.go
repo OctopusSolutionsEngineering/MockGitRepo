@@ -16,6 +16,7 @@ import (
 	"github.com/mcasperson/MockGitRepo/internal/domain/configuration"
 	"github.com/mcasperson/MockGitRepo/internal/domain/files"
 	"github.com/mcasperson/MockGitRepo/internal/domain/logging"
+	"github.com/mcasperson/MockGitRepo/internal/domain/security"
 	"github.com/mcasperson/MockGitRepo/internal/infrastructure"
 	"go.uber.org/zap"
 )
@@ -62,27 +63,33 @@ func GitHTTPBackend(c *gin.Context) {
 		return
 	}
 
+	if !security.IsValidUsernameOrPath(username) {
+		logging.Logger.Error("Usernames must be alphanumeric chars and dashes")
+		c.String(http.StatusBadRequest, "Usernames must be alphanumeric chars and dashes")
+		return
+	}
+
 	// Get the original repository path
 	gitProjectRoot := configuration.GetGitProjectRoot()
 
 	// Construct the full path to the repository using only the first directory
 	repoPath := filepath.Join(gitProjectRoot, "repotemplate")
 
+	userExists, err := infrastructure.TestCredentials(username, password)
+
+	if err != nil {
+		logging.Logger.Error("Failed to test for user in database", zap.Error(err))
+		c.String(http.StatusInternalServerError, "Failed to test for user in database")
+		return
+	}
+
 	// Copy repository to temporary directory
-	tempRepoPath, err := files.CopyRepoToTemp(repoPath)
+	tempRepoPath, err := files.CopyRepoToTemp(repoPath, userExists, username)
 	if err != nil {
 		logging.Logger.Error("Failed to copy repository to temp",
 			zap.String("repoPath", repoPath),
 			zap.Error(err))
 		c.String(http.StatusInternalServerError, "Failed to copy repository: %s", err)
-		return
-	}
-
-	userExists, err := infrastructure.TestCredentials(username, password)
-
-	if err != nil {
-		logging.Logger.Error("Failed to test for user in database")
-		c.String(http.StatusInternalServerError, "Failed to test for user in database: %s", err)
 		return
 	}
 

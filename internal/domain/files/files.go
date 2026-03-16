@@ -1,6 +1,7 @@
 package files
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mcasperson/MockGitRepo/internal/domain/logging"
+	"github.com/mcasperson/MockGitRepo/internal/domain/security"
 	"go.uber.org/zap"
 )
 
@@ -16,14 +18,45 @@ const (
 )
 
 // CopyRepoToTemp copies the repository directory to a temporary directory
+// repoPath is the path to the original repository
+// fixedLocation indicates whether to use a fixed location for the temp directory
+// fixedPath is the name of the fixed directory to use if fixedLocation is true
 // Returns the path to the temporary directory
-func CopyRepoToTemp(repoPath string) (string, error) {
-	// Create a temporary directory
-	tempDir, err := os.MkdirTemp("", gitRepoPrefix+"*")
+func CopyRepoToTemp(repoPath string, fixedLocation bool, fixedPath string) (string, error) {
+	if fixedLocation && !security.IsValidUsernameOrPath(fixedPath) {
+		return "", errors.New("invalid repository path: special characters are not allowed")
+	}
 
+	var tempDir string
+	if fixedLocation {
+		tempDir = filepath.Join(os.TempDir(), fixedPath)
+	} else {
+		// Create a temporary directory
+		var err error
+		tempDir, err = os.MkdirTemp("", gitRepoPrefix+"*")
+
+		if err != nil {
+			logging.Logger.Error("Failed to create temp directory", zap.Error(err))
+			return "", err
+		}
+	}
+
+	_, err := os.Stat(tempDir)
 	if err != nil {
-		logging.Logger.Error("Failed to create temp directory", zap.Error(err))
-		return "", err
+		// We expect an error when the directory doesn't exist,
+		// but if it's a different error, we should return it
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+
+		// Create the directory if it doesn't exist
+		mkdirErr := os.MkdirAll(tempDir, 0755)
+		if mkdirErr != nil {
+			return "", mkdirErr
+		}
+	} else {
+		// The directory already exists, so we can skip copying and return it directly
+		return tempDir, nil
 	}
 
 	logging.Logger.Info("Copying repository to temp directory",
@@ -42,6 +75,7 @@ func CopyRepoToTemp(repoPath string) (string, error) {
 
 	logging.Logger.Info("Repository copied successfully",
 		zap.String("tempDir", tempDir))
+
 	return tempDir, nil
 }
 
