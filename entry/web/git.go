@@ -4,7 +4,8 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
-	"github.com/mcasperson/MockGitRepo/internal/application/hanlders"
+	"github.com/mcasperson/MockGitRepo/internal/application/handlers"
+	"github.com/mcasperson/MockGitRepo/internal/domain/configuration"
 	"github.com/mcasperson/MockGitRepo/internal/domain/logging"
 	"go.uber.org/zap"
 )
@@ -19,11 +20,14 @@ func main() {
 
 	// Git HTTP backend routes
 	// Match all Git HTTP protocol routes
-	router.Any("/repo/*path", hanlders.GitHTTPBackend)
+	router.Any("/repo/*path", handlers.GitHTTPBackend)
 
 	// This allows us to insert a random id into the URL, which bypasses
 	// the constraint in Octopus where a git repo can only be used one.
-	router.Any("/uniquerepo/:id/*path", hanlders.GitHTTPBackend)
+	router.Any("/uniquerepo/:id/*path", handlers.GitHTTPBackend)
+
+	configuration.GetServiceToken()
+	router.PUT("/api/credentials", handlers.Credentials)
 
 	// Get port from environment variable or default to 8080
 	port := os.Getenv("PORT")

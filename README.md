@@ -109,3 +109,9 @@ These are the commands chained up:
 ```bash
 git config --bool core.bare false; git add .; git commit -m "Update sample repo"; git config --bool core.bare true; cd ../..
 ```
+
+## Persisting credentials
+
+```bash
+curl -X PUT -H "X_MOCKGIT_SERVICE_API_KEY: tokengoeshere" -d '{"data":{"type: "credentials", "id": "user1", "attributes": {"password": "blah"}}}' http://localhost:8080/api/credentials 
+```
