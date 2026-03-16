@@ -8,6 +8,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/data/aztables"
+	"github.com/mcasperson/MockGitRepo/internal/domain/security"
 )
 
 // credentialEntity represents a row in the Azure Storage Table.
@@ -48,7 +49,7 @@ func SaveCredentials(username, password string) error {
 			RowKey:       username,
 		},
 		Username: username,
-		Password: password,
+		Password: security.GetSha256(password),
 	}
 
 	data, err := json.Marshal(entity)
