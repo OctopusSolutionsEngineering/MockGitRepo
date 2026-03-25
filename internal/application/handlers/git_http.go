@@ -5,10 +5,10 @@ import (
 	"encoding/base64"
 	"errors"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -25,7 +25,9 @@ import (
 )
 
 const (
-	maxRequestSize = 128 * 1024 // 128KB in bytes
+	maxRequestSize      = 128 * 1024 // 128KB in bytes
+	processTemplatesDir = "process-templates"
+	policiesDir         = "policies"
 )
 
 // GitHTTPBackend handles Git HTTP requests using git-http-backend CGI
@@ -99,7 +101,12 @@ func GitHTTPBackend(c *gin.Context) {
 	// Rename the platform hub files to prevent Octopus tracking the history.
 	// This is only done on the first request when the repo was just configured.
 	if created {
-		renamePlatformHubFiles(tempRepoPath, c.Param("path"), username, password)
+		gitPath, err := getGitPath(c.Param("path"))
+		if err == nil {
+			// This renaming is just a best effort solution
+			renamePlatformHubFiles(tempRepoPath, gitPath, processTemplatesDir, username, password)
+			renamePlatformHubFiles(tempRepoPath, gitPath, policiesDir, username, password)
+		}
 	}
 
 	if userExists {
@@ -169,30 +176,50 @@ func GitHTTPBackend(c *gin.Context) {
 	c.Data(statusCode, c.Writer.Header().Get("Content-Type"), body)
 }
 
-// renamePlatformHubFiles renames all *.ocl files in the process-templates directory to prevent
-// Octopus from tracking their history. This is a best-effort operation; errors are logged but not propagated.
-func renamePlatformHubFiles(tempRepoPath, rawPath, username, password string) {
-	gitPath := strings.Split(strings.TrimLeft(rawPath, "/"), "/")[0]
-	templatesDir := filepath.Join(tempRepoPath, gitPath, ".octopus", "process-templates")
-
-	entries, err := os.ReadDir(templatesDir)
-	if err != nil {
-		logging.Logger.Error("Failed to read process-templates directory",
-			zap.String("templatesDir", templatesDir),
-			zap.Error(err))
-		return
+// getGitPath extracts the first path segment from a Gin wildcard param,
+// stripping any leading slash (e.g. "/myrepo/info/refs" → "myrepo").
+func getGitPath(rawPath string) (string, error) {
+	if rawPath == "" {
+		return "", errors.New("empty path parameter")
 	}
+	return strings.Split(strings.TrimLeft(rawPath, "/"), "/")[0], nil
+}
+
+// renamePlatformHubFiles renames all *.ocl files in the specified directory (and all
+// subdirectories) to prevent Octopus from tracking their history.
+// This is a best-effort operation; errors are logged but not propagated.
+func renamePlatformHubFiles(tempRepoPath, gitPath, baseDir, username, password string) {
+	repoRoot := filepath.Join(tempRepoPath, gitPath)
+	templatesDir := filepath.Join(repoRoot, ".octopus", baseDir)
 
 	var moves []git.FileMove
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".ocl" {
-			continue
+	err := filepath.WalkDir(templatesDir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
 		}
-		oldPath := path.Join(".octopus", "process-templates", entry.Name())
-		ext := filepath.Ext(entry.Name())
-		base := strings.TrimSuffix(entry.Name(), ext)
-		newPath := path.Join(".octopus", "process-templates", base+"-"+uuid.New().String()+ext)
-		moves = append(moves, git.FileMove{OldPath: oldPath, NewPath: newPath})
+
+		ext := filepath.Ext(d.Name())
+
+		if d.IsDir() || ext != ".ocl" {
+			return nil
+		}
+		// Build repo-root-relative paths for git
+		relPath, err := filepath.Rel(repoRoot, p)
+		if err != nil {
+			return err
+		}
+
+		base := strings.TrimSuffix(d.Name(), ext)
+		newRel := filepath.Join(filepath.Dir(relPath), base+"-"+uuid.New().String()+ext)
+		moves = append(moves, git.FileMove{OldPath: relPath, NewPath: newRel})
+		return nil
+	})
+	if err != nil {
+		logging.Logger.Error("Failed to walk the directory",
+			zap.String("templatesDir", templatesDir),
+			zap.String("baseDir", baseDir),
+			zap.Error(err))
+		return
 	}
 
 	if len(moves) == 0 {
