@@ -25,38 +25,24 @@ var limitTempDirsMu sync.Mutex
 // fixedLocation indicates whether to use a fixed location for the temp directory
 // fixedPath is the name of the fixed directory to use if fixedLocation is true
 // Returns the path to the temporary directory
-func CopyRepoToTemp(repoPath string, fixedLocation bool, fixedPath string) (string, bool, error) {
-	if fixedLocation && !security.IsValidUsernameOrPath(fixedPath) {
+func CopyRepoToTemp(repoPath string, fixedPath string) (string, bool, error) {
+	if !security.IsValidUsernameOrPath(fixedPath) {
 		return "", false, errors.New("invalid repository path: special characters are not allowed")
 	}
 
-	var tempDir string
-	if fixedLocation {
-		var exists bool
-		var err error
-		tempDir, exists, err = getOrCreateFixedTempDir(fixedPath)
-		if err != nil {
-			return "", false, err
-		}
-		if exists {
-			return tempDir, false, nil
-		}
-	} else {
-		// Create a temporary directory
-		var err error
-		tempDir, err = os.MkdirTemp("", gitRepoPrefix+"*")
-
-		if err != nil {
-			logging.Logger.Error("Failed to create temp directory", zap.Error(err))
-			return "", false, err
-		}
+	tempDir, exists, err := getOrCreateFixedTempDir(fixedPath)
+	if err != nil {
+		return "", false, err
+	}
+	if exists {
+		return tempDir, false, nil
 	}
 
 	logging.Logger.Info("Copying repository to temp directory",
 		zap.String("repoPath", repoPath))
 
 	// Copy the repository to the temp directory
-	err := CopyDir(repoPath, tempDir)
+	err = CopyDir(repoPath, tempDir)
 	if err != nil {
 		logging.Logger.Error("Failed to copy repository",
 			zap.String("src", repoPath),
