@@ -111,7 +111,9 @@ func GitHTTPBackend(c *gin.Context) {
 			renamePlatformHubFiles(tempRepoPath, gitPath, processTemplatesDir, username, password)
 			renamePlatformHubFiles(tempRepoPath, gitPath, policiesDir, username, password)
 		}
+	}
 
+	if created {
 		defer func() {
 			err := os.RemoveAll(tempRepoPath)
 			if err != nil {
