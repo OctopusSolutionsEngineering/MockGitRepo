@@ -1,8 +1,6 @@
 package main
 
 import (
-	"os"
-
 	"github.com/gin-gonic/gin"
 	"github.com/mcasperson/MockGitRepo/internal/application/handlers"
 	"github.com/mcasperson/MockGitRepo/internal/domain/configuration"
@@ -30,10 +28,7 @@ func main() {
 	router.PUT("/api/credentials", handlers.Credentials)
 
 	// Get port from environment variable or default to 8080
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
+	port := configuration.GetPort()
 
 	logging.Logger.Info("Starting HTTP server", zap.String("port", port))
 	// Start the server
