@@ -104,15 +104,15 @@ func GitHTTPBackend(c *gin.Context) {
 			renamePlatformHubFiles(tempRepoPath, gitPath, processTemplatesDir, username, password)
 			renamePlatformHubFiles(tempRepoPath, gitPath, policiesDir, username, password)
 		}
+
+		// If we created a new temp dir, we clean up an old one if there are too many.
+		files.LimitTempDirs(20)
 	}
 
 	if userExists {
 		logging.Logger.Info("Found user " + username + ". Delaying repo cleanup")
 	} else if created {
 		defer func() {
-			// If we created a new temp dir, we clean up an old one if there are too many.
-			files.LimitTempDirs(20)
-
 			err := os.RemoveAll(tempRepoPath)
 			if err != nil {
 				logging.Logger.Error("Failed to delete temp directory",
