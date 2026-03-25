@@ -37,6 +37,9 @@ func GitHTTPBackend(c *gin.Context) {
 		zap.String("path", c.Param("path")),
 		zap.String("clientIP", c.ClientIP()))
 
+	// Limit the number of temp directories to 20
+	files.LimitTempDirs(20)
+
 	// Check if Authorization header is present
 	if c.GetHeader("Authorization") == "" {
 		logging.Logger.Warn("No Authorization header provided",
@@ -104,9 +107,6 @@ func GitHTTPBackend(c *gin.Context) {
 			renamePlatformHubFiles(tempRepoPath, gitPath, processTemplatesDir, username, password)
 			renamePlatformHubFiles(tempRepoPath, gitPath, policiesDir, username, password)
 		}
-
-		// If we created a new temp dir, we clean up an old one if there are too many.
-		files.LimitTempDirs(20)
 	}
 
 	if userExists {
