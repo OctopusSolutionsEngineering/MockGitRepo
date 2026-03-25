@@ -97,6 +97,8 @@ func GitHTTPBackend(c *gin.Context) {
 		logging.Logger.Info("Found user " + username + ". Delaying repo cleanup")
 	} else {
 		defer func() {
+			logging.Logger.Info("Anonymous user " + username + " will be cleaned up immediately after request")
+
 			err := os.RemoveAll(tempRepoPath)
 			if err != nil {
 				logging.Logger.Error("Failed to delete temp directory",
