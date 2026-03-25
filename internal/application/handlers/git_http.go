@@ -110,9 +110,6 @@ func GitHTTPBackend(c *gin.Context) {
 		logging.Logger.Info("Found user " + username + ". Delaying repo cleanup")
 	} else if created {
 		defer func() {
-			// If we created a new temp dir, we clean up an old one if there are too many.
-			files.LimitTempDirs(20)
-
 			err := os.RemoveAll(tempRepoPath)
 			if err != nil {
 				logging.Logger.Error("Failed to delete temp directory",
@@ -122,6 +119,9 @@ func GitHTTPBackend(c *gin.Context) {
 				logging.Logger.Info("Deleted temp directory",
 					zap.String("tempRepoPath", tempRepoPath))
 			}
+
+			// If we created a new temp dir, we clean up an old one if there are too many.
+			files.LimitTempDirs(20)
 		}()
 	}
 
