@@ -113,7 +113,9 @@ func GitHTTPBackend(c *gin.Context) {
 		}
 	}
 
-	if created {
+	if userExists {
+		logging.Logger.Info("Found user " + username + ". Delaying repo cleanup")
+	} else if created {
 		defer func() {
 			err := os.RemoveAll(tempRepoPath)
 			if err != nil {
@@ -124,12 +126,16 @@ func GitHTTPBackend(c *gin.Context) {
 				logging.Logger.Info("Deleted temp directory",
 					zap.String("tempRepoPath", tempRepoPath))
 			}
+		}()
+	}
 
-			// If we created a new temp dir, we clean up an old one if there are too many.
-			// There is a potential race condition here were there are so many requests coming in that
-			// the cleanup routine is deleting directories in use. I suspect if that were the case,
-			// the service would be so slow it was unusable anyway. In theory, the scaling of Azure
-			// web apps means we won't have many concurrent users on one instance.
+	// If we created a new temp dir, we clean up an old one if there are too many.
+	// There is a potential race condition here were there are so many requests coming in that
+	// the cleanup routine is deleting directories in use. I suspect if that were the case,
+	// the service would be so slow it was unusable anyway. In theory, the scaling of Azure
+	// web apps means we won't have many concurrent users on one instance.
+	if created {
+		defer func() {
 			go func() {
 				files.LimitTempDirs(maxTempDirs)
 			}()
