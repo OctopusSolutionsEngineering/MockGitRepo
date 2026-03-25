@@ -99,18 +99,7 @@ func GitHTTPBackend(c *gin.Context) {
 	// Rename the platform hub files to prevent Octopus tracking the history.
 	// This is only done on the first request when the repo was just configured.
 	if created {
-		gitPath := strings.Split(strings.TrimLeft(c.Param("path"), "/"), "/")[0]
-		err = git.MoveFileAndPush(
-			"http://localhost:"+configuration.GetPort()+"/repo/"+gitPath,
-			username,
-			password,
-			path.Join(".octopus", "process-templates", "platform-postdeploy-hook.ocl"),
-			path.Join(".octopus", "process-templates", "platform-postdeploy-hook-"+uuid.New().String()+".ocl"),
-			"Rename platform hub file")
-		if err != nil {
-			// This is a best effort
-			logging.Logger.Error("Failed to rename ocl files", zap.Error(err))
-		}
+		renamePlatformHubFiles(tempRepoPath, c.Param("path"), username, password)
 	}
 
 	if userExists {
@@ -178,6 +167,47 @@ func GitHTTPBackend(c *gin.Context) {
 		zap.Int("bodySize", len(body)))
 
 	c.Data(statusCode, c.Writer.Header().Get("Content-Type"), body)
+}
+
+// renamePlatformHubFiles renames all *.ocl files in the process-templates directory to prevent
+// Octopus from tracking their history. This is a best-effort operation; errors are logged but not propagated.
+func renamePlatformHubFiles(tempRepoPath, rawPath, username, password string) {
+	gitPath := strings.Split(strings.TrimLeft(rawPath, "/"), "/")[0]
+	templatesDir := filepath.Join(tempRepoPath, gitPath, ".octopus", "process-templates")
+
+	entries, err := os.ReadDir(templatesDir)
+	if err != nil {
+		logging.Logger.Error("Failed to read process-templates directory",
+			zap.String("templatesDir", templatesDir),
+			zap.Error(err))
+		return
+	}
+
+	var moves []git.FileMove
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".ocl" {
+			continue
+		}
+		oldPath := path.Join(".octopus", "process-templates", entry.Name())
+		ext := filepath.Ext(entry.Name())
+		base := strings.TrimSuffix(entry.Name(), ext)
+		newPath := path.Join(".octopus", "process-templates", base+"-"+uuid.New().String()+ext)
+		moves = append(moves, git.FileMove{OldPath: oldPath, NewPath: newPath})
+	}
+
+	if len(moves) == 0 {
+		return
+	}
+
+	if err := git.MoveFileAndPush(
+		"http://localhost:"+configuration.GetPort()+"/repo/"+gitPath,
+		username,
+		password,
+		moves,
+		"Rename platform hub files"); err != nil {
+		// This is a best effort
+		logging.Logger.Error("Failed to rename ocl files", zap.Error(err))
+	}
 }
 
 // setupCGIEnvironment configures the CGI environment variables for git-http-backend
