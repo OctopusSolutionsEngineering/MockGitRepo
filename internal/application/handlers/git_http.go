@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -112,6 +113,16 @@ func GitHTTPBackend(c *gin.Context) {
 		}
 
 		defer func() {
+			err := os.RemoveAll(tempRepoPath)
+			if err != nil {
+				logging.Logger.Error("Failed to delete temp directory",
+					zap.String("tempRepoPath", tempRepoPath),
+					zap.Error(err))
+			} else {
+				logging.Logger.Info("Deleted temp directory",
+					zap.String("tempRepoPath", tempRepoPath))
+			}
+
 			// If we created a new temp dir, we clean up an old one if there are too many.
 			// There is a potential race condition here were there are so many requests coming in that
 			// the cleanup routine is deleting directories in use. I suspect if that were the case,
