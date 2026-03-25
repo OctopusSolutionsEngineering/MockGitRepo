@@ -104,7 +104,7 @@ func GitHTTPBackend(c *gin.Context) {
 
 	if userExists {
 		logging.Logger.Info("Found user " + username + ". Delaying repo cleanup")
-	} else {
+	} else if created {
 		defer func() {
 			err := os.RemoveAll(tempRepoPath)
 			if err != nil {
