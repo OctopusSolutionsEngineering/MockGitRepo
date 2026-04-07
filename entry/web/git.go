@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/mcasperson/MockGitRepo/internal/application/handlers"
+	"github.com/mcasperson/MockGitRepo/internal/domain/cleanup"
 	"github.com/mcasperson/MockGitRepo/internal/domain/configuration"
 	"github.com/mcasperson/MockGitRepo/internal/domain/logging"
 	"go.uber.org/zap"
@@ -12,6 +13,9 @@ func main() {
 	if err := logging.ConfigureLogger(); err != nil {
 		panic("Failed to configure logger: " + err.Error())
 	}
+
+	// Start cleanup
+	cleanup.StartTempDirCleanup()
 
 	// Create a new Gin router with default middleware
 	router := gin.Default()

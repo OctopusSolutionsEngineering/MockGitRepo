@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 	"github.com/mcasperson/MockGitRepo/internal/domain/configuration"
@@ -21,12 +22,20 @@ import (
 	"go.uber.org/zap"
 )
 
+var gitHTTPBackendMu sync.Mutex
+
 const (
 	maxRequestSize = 128 * 1024 // 128KB in bytes
 )
 
 // GitHTTPBackend handles Git HTTP requests using git-http-backend CGI
 func GitHTTPBackend(c *gin.Context) {
+	if !gitHTTPBackendMu.TryLock() {
+		c.String(http.StatusServiceUnavailable, "Server busy, please retry")
+		return
+	}
+	defer gitHTTPBackendMu.Unlock()
+
 	logging.Logger.Info("Git HTTP request received",
 		zap.String("method", c.Request.Method),
 		zap.String("path", c.Param("path")),
