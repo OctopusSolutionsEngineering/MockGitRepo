@@ -44,13 +44,13 @@ git clone https://<unique user name>@mockgit.octopus.com/repo/<repo name>
 Start the server using the pre-built image from GitHub Container Registry:
 
 ```bash
-docker run -d --name mockgitserver -p 8080:8080 ghcr.io/mcasperson/mockgitrepo:latest
+docker run -d --name mockgitserver -p 8080:8080 ghcr.io/OctopusSolutionsEngineering/mockgitrepo:latest
 ```
 
 Or with Podman:
 
 ```bash
-podman run -d --name mockgitserver -p 8080:8080 ghcr.io/mcasperson/mockgitrepo:latest
+podman run -d --name mockgitserver -p 8080:8080 ghcr.io/OctopusSolutionsEngineering/mockgitrepo:latest
 ```
 
 Clone the repository (you must provide a username in the URL):
@@ -79,7 +79,7 @@ docker run -d --name mockgitserver -p 8080:8080 mockgitserver
 This application is hosted on Azure. The follow commands demonstrate how you can clone and then interact with the repo.
 
 ```bash
-git clone https://blahblah@mockgit.octopus.com/repo/platformhubrepo
+git clone https://blahblah@mockgit.octopusdemos.com/repo/platformhubrepo
 cd platformhubrepo
 touch newfile.txt
 git add newfile.txt
