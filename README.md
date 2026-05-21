@@ -1,6 +1,6 @@
 A mock Git server that creates ephemeral Git repos for testing.
 
-Every request is against a fresh copy of a Git repo, so no changes are preserved. 
+Every request from an unknown user is against a fresh copy of a Git repo, so no changes are preserved. 
 
 The service accepts any username and password.
 
@@ -10,6 +10,12 @@ The repo copies are created when they are first accessed, so the workflow is:
 2. The server creates a temporary copy of the git repo for that request.
 3. The client can interact with the repo as normal (e.g. `git add`, `git commit`, `git push`), and the temporary directory will be modified.
 4. The temporary directory is immediately deleted after the request is complete.
+
+## Known users
+
+The git repo for known users will persit for a short amount of time providing an ephemeral repo. The repos are either explicitly cleaned up, or are deleted as the hosting environment scales to 0, so the lifetime of the ephemeral repos is not guaranteed.
+
+## Sample repos
 
 The sample repos exist in `repotemplate.tar.bz2`. This is to prevent Git from complaining about nested Git repositories in the project. 
 The `unpacktemplate.sh` and `packtemplate.sh` scripts are used to unpack and pack the template repository.
