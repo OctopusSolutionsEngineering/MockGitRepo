@@ -100,17 +100,19 @@ git pull
 7. Run `git checkout -b main` to create the main branch
 8. Run `git config --bool core.bare true`
 9. Run `git config receive.denyNonFastForwards false` to allow non-fast-forward pushes (e.g. force pushes)
-10. Run `packtemplate.sh` to pack the template repo into `repotemplate.tar.bz2`
+10. Enter the root of the template repo e.g. `cd ../..`
+11. Run `packtemplate.sh` to pack the template repo into `repotemplate.tar.bz2`
 
 ## Update sample repo
 
 1. Run `unpacktemplate.sh` to unpack the template repo into `repotemplate`
 2. Enter the directory of the repo you want to update e.g. `cd repotemplate/argocd`
-2. Run `git config --bool core.bare false`
-3. Make changes to the repo
-4. Run `git add .` and `git commit -m "Update sample repo"`
-5. Run `git config --bool core.bare true`
-6. Run `packtemplate.sh` to pack the template repo into `repotemplate.tar.bz2`
+3. Run `git config --bool core.bare false`
+4. Make changes to the repo
+5. Run `git add .` and `git commit -m "Update sample repo"`
+6. Run `git config --bool core.bare true`
+7. Enter the root of the template repo e.g. `cd ../..`
+8. Run `packtemplate.sh` to pack the template repo into `repotemplate.tar.bz2`
 
 These are the commands chained up:
 
