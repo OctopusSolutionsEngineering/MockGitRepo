@@ -65,9 +65,16 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      - name: Set image tag
+        id: image-tag
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}:${{ github.ref_name }}-sha-${SHORT_SHA}"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+
       - name: Deploy to Azure Container App
         uses: azure/container-apps-deploy-action@v1
         with:
-          imageToDeploy: ghcr.io/${{ github.repository }}:${{ github.ref_name }}-sha-${{ github.sha }}
+          imageToDeploy: ${{ steps.image-tag.outputs.image }}
           containerAppName: ${{ secrets.AZURE_CONTAINER_APP_NAME }}
           resourceGroup: ${{ secrets.AZURE_RESOURCE_GROUP }}
