@@ -69,7 +69,7 @@ jobs:
         id: image-tag
         run: |
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}:${{ github.ref_name }}-sha-${SHORT_SHA}"
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}:${{ github.ref_name }}-${SHORT_SHA}"
           echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
 
       - name: Deploy to Azure Container App
