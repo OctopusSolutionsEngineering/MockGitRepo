@@ -66,8 +66,8 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Deploy to Azure Container App
-        uses: azure/container-apps-deploy@v1
+        uses: azure/container-apps-deploy-action@v1
         with:
-          resourceGroup: ${{ secrets.AZURE_RESOURCE_GROUP }}
-          containerAppName: ${{ secrets.AZURE_CONTAINER_APP_NAME }}
           imageToDeploy: ghcr.io/${{ github.repository }}:${{ github.ref_name }}-sha-${{ github.sha }}
+          containerAppName: ${{ secrets.AZURE_CONTAINER_APP_NAME }}
+          resourceGroup: ${{ secrets.AZURE_RESOURCE_GROUP }}
