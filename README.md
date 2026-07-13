@@ -99,6 +99,7 @@ git pull
 ## Update sample repo
 
 1. Run `unpacktemplate.sh` to unpack the template repo into `repotemplate`
+2. Enter the directory of the repo you want to update e.g. `cd repotemplate/argocd`
 2. Run `git config --bool core.bare false`
 3. Make changes to the repo
 4. Run `git add .` and `git commit -m "Update sample repo"`
