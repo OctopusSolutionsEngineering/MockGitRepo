@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/mcasperson/MockGitRepo/internal/application/handlers"
+	"github.com/mcasperson/MockGitRepo/internal/application/templates"
 	"github.com/mcasperson/MockGitRepo/internal/domain/cleanup"
 	"github.com/mcasperson/MockGitRepo/internal/domain/configuration"
 	"github.com/mcasperson/MockGitRepo/internal/domain/logging"
@@ -24,8 +25,8 @@ func main() {
 	// Create a new Gin router with default middleware
 	router := gin.Default()
 
-	// Set up template functions and load templates
-	router.SetFuncMap(template.FuncMap{
+	// Set up template functions and load embedded templates
+	funcMap := template.FuncMap{
 		"split": strings.Split,
 		"joinPath": func(base, part string) string {
 			if base == "" {
@@ -33,8 +34,9 @@ func main() {
 			}
 			return base + "/" + part
 		},
-	})
-	router.LoadHTMLGlob("internal/application/templates/*.html")
+	}
+	tmpl := template.Must(template.New("").Funcs(funcMap).ParseFS(templates.FS, "*.html"))
+	router.SetHTMLTemplate(tmpl)
 
 	// Git HTTP backend routes
 	// Match all Git HTTP protocol routes
