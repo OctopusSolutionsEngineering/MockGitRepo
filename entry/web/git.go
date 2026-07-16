@@ -2,6 +2,7 @@ package main
 
 import (
 	"html/template"
+	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -49,6 +50,11 @@ func main() {
 	// File browser route - /browse/:username/*filepath
 	router.GET("/browse/:username/*filepath", handlers.GitBrowser)
 	router.GET("/browse/:username", handlers.GitBrowser)
+
+	// Health check endpoint
+	router.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
 
 	// Get port from environment variable or default to 8080
 	port := configuration.GetPort()
