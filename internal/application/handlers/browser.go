@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
@@ -103,9 +104,31 @@ func listTree(repoPath, branch, treePath string) ([]TreeEntry, error) {
 	return entries, nil
 }
 
-// getFileContent returns the content of a file at a given path in a branch
+// getFileContent returns the content of a file at a given path in a branch.
+// Returns an error if the file exceeds 128KB.
 func getFileContent(repoPath, branch, filePath string) (string, error) {
 	ref := branch + ":" + filePath
+
+	// Check file size using cat-file -s
+	sizeOutput, err := gitCommand(repoPath, "cat-file", "-s", ref)
+	if err != nil {
+		return "", err
+	}
+
+	sizeStr := strings.TrimSpace(sizeOutput)
+	var size int64
+	for _, ch := range sizeStr {
+		if ch < '0' || ch > '9' {
+			break
+		}
+		size = size*10 + int64(ch-'0')
+	}
+
+	const maxFileSize = 128 * 1024 // 128KB
+	if size > maxFileSize {
+		return "", fmt.Errorf("file is too large to display (%d bytes, maximum is %d bytes)", size, maxFileSize)
+	}
+
 	output, err := gitCommand(repoPath, "show", ref)
 	if err != nil {
 		return "", err
