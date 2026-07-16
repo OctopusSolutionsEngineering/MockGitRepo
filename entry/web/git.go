@@ -1,6 +1,9 @@
 package main
 
 import (
+	"html/template"
+	"strings"
+
 	"github.com/gin-gonic/gin"
 	"github.com/mcasperson/MockGitRepo/internal/application/handlers"
 	"github.com/mcasperson/MockGitRepo/internal/domain/cleanup"
@@ -20,6 +23,18 @@ func main() {
 	// Create a new Gin router with default middleware
 	router := gin.Default()
 
+	// Set up template functions and load templates
+	router.SetFuncMap(template.FuncMap{
+		"split": strings.Split,
+		"joinPath": func(base, part string) string {
+			if base == "" {
+				return part
+			}
+			return base + "/" + part
+		},
+	})
+	router.LoadHTMLGlob("internal/application/templates/*.html")
+
 	// Git HTTP backend routes
 	// Match all Git HTTP protocol routes
 	router.Any("/repo/*path", handlers.GitHTTPBackend)
@@ -30,6 +45,10 @@ func main() {
 
 	configuration.GetServiceToken()
 	router.PUT("/api/credentials", handlers.Credentials)
+
+	// File browser route - /browse/:username/*filepath
+	router.GET("/browse/:username/*filepath", handlers.GitBrowser)
+	router.GET("/browse/:username", handlers.GitBrowser)
 
 	// Get port from environment variable or default to 8080
 	port := configuration.GetPort()
