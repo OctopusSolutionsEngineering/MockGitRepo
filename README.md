@@ -53,6 +53,11 @@ Or with Podman:
 podman run -d --name mockgitserver -p 8080:8080 ghcr.io/OctopusSolutionsEngineering/mockgitrepo:latest
 ```
 
+Configuration environment variables:
+
+* `GIT_PROJECT_ROOT`: Base path containing source repositories (default: `/data/repos`).
+* `GIT_TEMP_ROOT`: Base path for temporary repository copies created per request (default: system temp directory).
+
 Clone the repository (you must provide a username in the URL):
 
 ```bash

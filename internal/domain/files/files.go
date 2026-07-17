@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mcasperson/MockGitRepo/internal/domain/configuration"
 	"github.com/mcasperson/MockGitRepo/internal/domain/logging"
 	"github.com/mcasperson/MockGitRepo/internal/domain/security"
 	"go.uber.org/zap"
@@ -41,7 +42,7 @@ func CopyRepoToTemp(repoPath string, fixedLocation bool, fixedPath string) (stri
 	} else {
 		// Create a temporary directory
 		var err error
-		tempDir, err = os.MkdirTemp("", gitRepoPrefix+"*")
+		tempDir, err = os.MkdirTemp(configuration.GetGitTempRoot(), gitRepoPrefix+"*")
 
 		if err != nil {
 			logging.Logger.Error("Failed to create temp directory", zap.Error(err))
