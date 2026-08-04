@@ -58,6 +58,15 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
+	// Log any requests that don't match a registered route
+	router.NoRoute(func(c *gin.Context) {
+		logging.Logger.Warn("No route matched request",
+			zap.String("method", c.Request.Method),
+			zap.String("path", c.Request.URL.Path),
+			zap.String("clientIP", c.ClientIP()))
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+	})
+
 	// Get port from environment variable or default to 8080
 	port := configuration.GetPort()
 
