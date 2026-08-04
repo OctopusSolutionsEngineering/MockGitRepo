@@ -152,13 +152,35 @@ func CopyDir(src, dst string) error {
 	return copyFiles(src, dst, entryFiles)
 }
 
+// isMacMetadata reports whether name is a macOS metadata file that must never be
+// copied into a repository.
+//
+// An AppleDouble file is a sidecar named "._" plus the name of the file it
+// belongs to, and macOS writes one whenever a file carrying extended attributes
+// lands on a filesystem that cannot store them natively, such as an SMB mounted
+// file share. Git finds packfiles by scanning objects/pack and treats every .idx
+// it sees there as a pack index, so a ._pack-*.idx sidecar is read as a truncated
+// index and reported as "index file is too small". That breaks every fetch from
+// the repository, and clones made from it inherit the sidecar.
+func isMacMetadata(name string) bool {
+	return name == ".DS_Store" || strings.HasPrefix(name, "._")
+}
+
 // scanDir walks src and returns the directories and files beneath it, excluding
 // src itself. Anything that is not a directory is treated as a file, so symlinks
-// are copied by content in the same way the destination sees them.
+// are copied by content in the same way the destination sees them. macOS metadata
+// files are left behind rather than copied.
 func scanDir(src string) (dirs []scannedEntry, entryFiles []scannedEntry, err error) {
 	err = filepath.WalkDir(src, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
+		}
+
+		if isMacMetadata(d.Name()) {
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
 		}
 
 		relPath, err := filepath.Rel(src, path)

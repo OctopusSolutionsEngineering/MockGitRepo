@@ -16,7 +16,16 @@ while IFS= read -r -d '' gitdir; do
     echo "Packed $repo: $before loose objects -> $after"
 done < <(find repotemplate -type d -name .git -print0)
 
-tar -cjf repotemplate.tar.bz2 repotemplate
+# Remove any macOS metadata that has crept into the templates, and stop tar from
+# storing extended attributes as AppleDouble entries. A ._pack-*.idx sidecar next
+# to a real pack index is read by git as a truncated index, which breaks fetches
+# from the repository.
+find repotemplate \( -name '._*' -o -name '.DS_Store' \) -delete
+xattr -cr repotemplate 2>/dev/null || true
+
+COPYFILE_DISABLE=1 tar --no-xattrs \
+    --exclude '._*' --exclude '.DS_Store' \
+    -cjf repotemplate.tar.bz2 repotemplate
 if [[ -f repotemplate.tar.bz2 ]]; then
     echo "repotemplate.tar.bz2 created successfully."
     #rm -rf repotemplate
