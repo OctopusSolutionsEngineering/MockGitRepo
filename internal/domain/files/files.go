@@ -53,19 +53,23 @@ func CopyRepoToTemp(repoPath string, fixedLocation bool, fixedPath string) (stri
 	logging.Logger.Info("Copying repository to temp directory",
 		zap.String("repoPath", repoPath))
 
+	copyStart := time.Now()
+
 	// Copy the repository to the temp directory
 	err := CopyDir(repoPath, tempDir)
 	if err != nil {
 		logging.Logger.Error("Failed to copy repository",
 			zap.String("src", repoPath),
 			zap.String("dst", tempDir),
+			zap.Duration("duration", time.Since(copyStart)),
 			zap.Error(err))
 		os.RemoveAll(tempDir)
 		return "", false, err
 	}
 
 	logging.Logger.Info("Repository copied successfully",
-		zap.String("tempDir", tempDir))
+		zap.String("tempDir", tempDir),
+		zap.Duration("duration", time.Since(copyStart)))
 
 	return tempDir, true, nil
 }
