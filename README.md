@@ -39,6 +39,12 @@ Repos are cloned with the command:
 git clone https://<unique user name>@mockgit.octopusdemos.com/repo/<repo name>
 ```
 
+For example:
+
+```bash
+git clone https://whatever@mockgit.octopusdemos.com/repo/platformhubrepo
+```
+
 ## Usage
 
 Start the server using the pre-built image from GitHub Container Registry:
