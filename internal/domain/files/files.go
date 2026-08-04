@@ -3,6 +3,7 @@ package files
 import (
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,10 +13,19 @@ import (
 	"github.com/mcasperson/MockGitRepo/internal/domain/logging"
 	"github.com/mcasperson/MockGitRepo/internal/domain/security"
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
 	gitRepoPrefix = "git-repo-"
+
+	// copyConcurrency bounds the number of file copies in flight at once.
+	// Copying a repository is dominated by per-file round trips rather than by
+	// the volume of data moved, because the templates are made up of many small
+	// files. On a network filesystem such as an Azure Files mount each create,
+	// write and close is a separate round trip, so overlapping the copies is
+	// what makes the copy fast.
+	copyConcurrency = 32
 )
 
 // CopyRepoToTemp copies the repository directory to a temporary directory
@@ -101,7 +111,22 @@ func getOrCreateFixedTempDir(fixedPath string) (string, bool, error) {
 	return tempDir, true, nil
 }
 
-// CopyDir recursively copies a directory from src to dst
+// scannedEntry is a single directory or file found beneath the source tree,
+// recorded as a path relative to the root of that tree.
+type scannedEntry struct {
+	relPath string
+	mode    os.FileMode
+	// depth is the number of path separators in relPath, and is only used to
+	// order directory creation.
+	depth int
+}
+
+// CopyDir recursively copies a directory from src to dst.
+//
+// The source tree is scanned up front, then directories are created one depth
+// level at a time and the files are copied concurrently. Walking the source is
+// cheap compared to writing to the destination, so doing the traversal
+// separately lets every write to the destination overlap with the others.
 func CopyDir(src, dst string) error {
 	// Get source directory info
 	srcInfo, err := os.Stat(src)
@@ -115,60 +140,157 @@ func CopyDir(src, dst string) error {
 		return err
 	}
 
-	// Read source directory
-	entries, err := os.ReadDir(src)
+	dirs, entryFiles, err := scanDir(src)
 	if err != nil {
 		return err
 	}
 
-	// Copy each entry
-	for _, entry := range entries {
-		srcPath := filepath.Join(src, entry.Name())
-		dstPath := filepath.Join(dst, entry.Name())
+	if err := createDirs(dst, dirs); err != nil {
+		return err
+	}
 
-		if entry.IsDir() {
-			// Recursively copy subdirectories
-			err = CopyDir(srcPath, dstPath)
-			if err != nil {
-				return err
-			}
+	return copyFiles(src, dst, entryFiles)
+}
+
+// scanDir walks src and returns the directories and files beneath it, excluding
+// src itself. Anything that is not a directory is treated as a file, so symlinks
+// are copied by content in the same way the destination sees them.
+func scanDir(src string) (dirs []scannedEntry, entryFiles []scannedEntry, err error) {
+	err = filepath.WalkDir(src, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+
+		relPath, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+
+		// The root is created by the caller
+		if relPath == "." {
+			return nil
+		}
+
+		// DirEntry.Info is served from the directory read, so this does not cost
+		// an extra stat of the source
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+
+		entry := scannedEntry{
+			relPath: relPath,
+			mode:    info.Mode(),
+			depth:   strings.Count(relPath, string(os.PathSeparator)),
+		}
+
+		if d.IsDir() {
+			dirs = append(dirs, entry)
 		} else {
-			// Copy file
-			err = CopyFile(srcPath, dstPath)
-			if err != nil {
-				return err
+			entryFiles = append(entryFiles, entry)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return dirs, entryFiles, nil
+}
+
+// createDirs creates dirs beneath dst. Directories are grouped by depth so that
+// every parent exists before its children are attempted, while siblings at the
+// same depth are created concurrently.
+func createDirs(dst string, dirs []scannedEntry) error {
+	maxDepth := 0
+	for _, dir := range dirs {
+		if dir.depth > maxDepth {
+			maxDepth = dir.depth
+		}
+	}
+
+	for depth := 0; depth <= maxDepth; depth++ {
+		var group errgroup.Group
+		group.SetLimit(copyConcurrency)
+
+		for _, dir := range dirs {
+			if dir.depth != depth {
+				continue
 			}
+
+			group.Go(func() error {
+				err := os.Mkdir(filepath.Join(dst, dir.relPath), dir.mode)
+				// A directory left over from an earlier copy is not a failure
+				if err != nil && !os.IsExist(err) {
+					return err
+				}
+				return nil
+			})
+		}
+
+		if err := group.Wait(); err != nil {
+			return err
 		}
 	}
 
 	return nil
 }
 
-// CopyFile copies a single file from src to dst
+// copyFiles copies entryFiles from src to dst concurrently. The directories they
+// live in must already exist.
+func copyFiles(src, dst string, entryFiles []scannedEntry) error {
+	var group errgroup.Group
+	group.SetLimit(copyConcurrency)
+
+	for _, file := range entryFiles {
+		group.Go(func() error {
+			return copyFileWithMode(
+				filepath.Join(src, file.relPath),
+				filepath.Join(dst, file.relPath),
+				file.mode)
+		})
+	}
+
+	return group.Wait()
+}
+
+// CopyFile copies a single file from src to dst, preserving its permissions
 func CopyFile(src, dst string) error {
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+
+	return copyFileWithMode(src, dst, srcInfo.Mode())
+}
+
+// copyFileWithMode copies src to dst, creating dst with the given mode.
+//
+// The mode is applied when the file is created rather than by a follow up
+// Chmod, which saves a round trip per file. Note that this means the mode is
+// masked by the process umask, where an explicit Chmod would not be.
+func copyFileWithMode(src, dst string, mode os.FileMode) error {
 	srcFile, err := os.Open(src)
 	if err != nil {
 		return err
 	}
 	defer srcFile.Close()
 
-	dstFile, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer dstFile.Close()
-
-	_, err = io.Copy(dstFile, srcFile)
+	dstFile, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
 	if err != nil {
 		return err
 	}
 
-	// Copy file permissions
-	srcInfo, err := os.Stat(src)
-	if err != nil {
+	if _, err := io.Copy(dstFile, srcFile); err != nil {
+		dstFile.Close()
 		return err
 	}
-	return os.Chmod(dst, srcInfo.Mode())
+
+	// Closing a file on a network filesystem flushes the write, so the error
+	// matters here
+	return dstFile.Close()
 }
 
 // LimitTempDirs ensures there are no more than maxDirs temp directories
