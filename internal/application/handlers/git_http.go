@@ -88,7 +88,7 @@ func GitHTTPBackend(c *gin.Context) {
 	}
 
 	// Copy repository to temporary directory
-	tempRepoPath, created, err := files.CopyRepoToTemp(repoPath, userExists, username)
+	tempRepoPath, created, err := prepareTempRepo(c, repoPath, userExists, username)
 	if err != nil {
 		logging.Logger.Error("Failed to copy repository to temp",
 			zap.String("repoPath", repoPath),
@@ -170,6 +170,61 @@ func GitHTTPBackend(c *gin.Context) {
 		zap.Int("bodySize", len(body)))
 
 	c.Data(statusCode, c.Writer.Header().Get("Content-Type"), body)
+}
+
+// prepareTempRepo returns the copy of the repository that this request is served
+// from, creating it if it does not exist yet.
+//
+// The per user copies live on the remote file system, which is slow to write to, and
+// the first copy for a user can take long enough for the client to time out. A request
+// that only reads the repository never writes to that copy, so when it is missing the
+// repository is copied to local disk as well and the request is served from there
+// while the remote copy is made in the background. Every later request finds the
+// remote copy in place and uses it directly.
+//
+// Requests that write keep using the remote copy, so that pushes land on the copy that
+// outlives the request. An anonymous user has no copy that outlives the request, so
+// theirs is made on local disk whatever the request does with it.
+func prepareTempRepo(c *gin.Context, repoPath string, userExists bool, username string) (string, bool, error) {
+	if !userExists {
+		return files.CopyRepoToTemp(repoPath, files.LocalTempRoot, false, username)
+	}
+
+	if !isReadRequest(c) {
+		return files.CopyRepoToTemp(repoPath, files.RemoteTempRoot(), true, username)
+	}
+
+	remoteReady, err := files.TempRepoReady(files.RemoteTempRoot(), username)
+	if err != nil {
+		return "", false, err
+	}
+
+	if remoteReady {
+		return files.CopyRepoToTemp(repoPath, files.RemoteTempRoot(), true, username)
+	}
+
+	logging.Logger.Info("Serving read only request from local disk while the remote repository is copied",
+		zap.String("username", username))
+
+	files.CopyRepoToTempAsync(repoPath, files.RemoteTempRoot(), username)
+
+	return files.CopyRepoToTemp(repoPath, files.LocalTempRoot, true, username)
+}
+
+// isReadRequest reports whether the request only reads the repository.
+//
+// A fetch or a clone talks to git-upload-pack, while a push talks to git-receive-pack,
+// either by naming the service on the info/refs advertisement or by posting to the
+// service endpoint itself. Anything that does not name git-receive-pack leaves the
+// repository as it found it, including the dumb protocol requests for loose objects.
+func isReadRequest(c *gin.Context) bool {
+	const receivePack = "git-receive-pack"
+
+	if strings.HasSuffix(c.Param("path"), "/"+receivePack) {
+		return false
+	}
+
+	return c.Query("service") != receivePack
 }
 
 // setupCGIEnvironment configures the CGI environment variables for git-http-backend

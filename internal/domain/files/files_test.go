@@ -6,6 +6,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/mcasperson/MockGitRepo/internal/domain/logging"
+	"go.uber.org/zap"
 )
 
 // newPackedRepo builds a git repository whose objects have been packed, so that
@@ -169,5 +173,92 @@ func TestCopyDirPreservesTree(t *testing.T) {
 				t.Errorf("%s: content want %q, got %q", tc.relPath, tc.content, got)
 			}
 		}
+	}
+}
+
+// TestMain configures the logger that the code under test writes through, which is
+// otherwise nil.
+func TestMain(m *testing.M) {
+	logging.Logger = zap.NewNop()
+	os.Exit(m.Run())
+}
+
+// TestCopyRepoToTempUsesDestRoot checks that the copy lands beneath the destination
+// root the caller asked for, so that a request can choose between the remote file
+// system and local disk.
+func TestCopyRepoToTempUsesDestRoot(t *testing.T) {
+	src := newPackedRepo(t)
+	destRoot := t.TempDir()
+
+	dest, created, err := CopyRepoToTemp(src, destRoot, true, "someuser")
+	if err != nil {
+		t.Fatalf("CopyRepoToTemp: %v", err)
+	}
+
+	if want := filepath.Join(destRoot, "someuser"); dest != want {
+		t.Fatalf("copied to %s, want %s", dest, want)
+	}
+	if !created {
+		t.Fatal("first copy reported that the directory already existed")
+	}
+	if _, err := os.Stat(filepath.Join(dest, "file.txt")); err != nil {
+		t.Fatalf("stat copied file: %v", err)
+	}
+
+	// A second call finds the copy in place and leaves it alone
+	dest, created, err = CopyRepoToTemp(src, destRoot, true, "someuser")
+	if err != nil {
+		t.Fatalf("second CopyRepoToTemp: %v", err)
+	}
+	if created {
+		t.Fatal("second copy reported that it created the directory")
+	}
+	if want := filepath.Join(destRoot, "someuser"); dest != want {
+		t.Fatalf("second copy returned %s, want %s", dest, want)
+	}
+}
+
+// TestTempRepoReadyTracksAsyncCopy checks that a destination is only reported as
+// ready once it holds a repository, so a request is never served a directory that a
+// background copy is still filling.
+func TestTempRepoReadyTracksAsyncCopy(t *testing.T) {
+	src := newPackedRepo(t)
+	destRoot := t.TempDir()
+
+	ready, err := TempRepoReady(destRoot, "someuser")
+	if err != nil {
+		t.Fatalf("TempRepoReady: %v", err)
+	}
+	if ready {
+		t.Fatal("a destination that was never copied to reported as ready")
+	}
+
+	CopyRepoToTempAsync(src, destRoot, "someuser")
+
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		ready, err = TempRepoReady(destRoot, "someuser")
+		if err != nil {
+			t.Fatalf("TempRepoReady: %v", err)
+		}
+		if ready {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("background copy did not finish")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if _, err := os.Stat(filepath.Join(destRoot, "someuser", "file.txt")); err != nil {
+		t.Fatalf("stat copied file: %v", err)
+	}
+}
+
+// TestTempRepoReadyRejectsInvalidPath checks that the existence check applies the same
+// path validation as the copy, rather than stating a path built from arbitrary input.
+func TestTempRepoReadyRejectsInvalidPath(t *testing.T) {
+	if _, err := TempRepoReady(t.TempDir(), "../escape"); err == nil {
+		t.Fatal("expected an error for a path with special characters")
 	}
 }

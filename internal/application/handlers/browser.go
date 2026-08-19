@@ -185,7 +185,7 @@ func GitBrowser(c *gin.Context) {
 	repoPath := filepath.Join(gitProjectRoot, "repotemplate")
 
 	// Copy repository to temporary directory if it doesn't exist
-	tempRepoPath, _, err := files.CopyRepoToTemp(repoPath, true, username)
+	tempRepoPath, _, err := files.CopyRepoToTemp(repoPath, files.RemoteTempRoot(), true, username)
 	if err != nil {
 		c.HTML(http.StatusInternalServerError, "browser.html", BrowserData{
 			Error:    "Failed to prepare repository: " + err.Error(),

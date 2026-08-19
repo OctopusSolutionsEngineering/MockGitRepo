@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mcasperson/MockGitRepo/internal/domain/configuration"
@@ -19,6 +20,11 @@ import (
 const (
 	gitRepoPrefix = "git-repo-"
 
+	// LocalTempRoot is the local disk directory used for repository copies that
+	// only have to outlive the requests reading them. Copies that must survive a
+	// request live under RemoteTempRoot instead.
+	LocalTempRoot = "/tmp"
+
 	// copyConcurrency bounds the number of file copies in flight at once.
 	// Copying a repository is dominated by per-file round trips rather than by
 	// the volume of data moved, because the templates are made up of many small
@@ -28,21 +34,59 @@ const (
 	copyConcurrency = 32
 )
 
+// RemoteTempRoot returns the directory that holds the repository copies which have
+// to outlive a single request. In production this is a mounted network file share,
+// which is why the first copy into it is slow.
+func RemoteTempRoot() string {
+	if root := configuration.GetGitTempRoot(); root != "" {
+		return root
+	}
+	return os.TempDir()
+}
+
+// TempRepoPath returns the path of the fixed repository copy for fixedPath beneath
+// destRoot, without creating or copying anything.
+func TempRepoPath(destRoot string, fixedPath string) string {
+	return filepath.Join(resolveDestRoot(destRoot), fixedPath)
+}
+
+// TempRepoExists reports whether the fixed repository copy for fixedPath already
+// exists beneath destRoot.
+func TempRepoExists(destRoot string, fixedPath string) (bool, error) {
+	if !security.IsValidUsernameOrPath(fixedPath) {
+		return false, errors.New("invalid repository path: special characters are not allowed")
+	}
+
+	_, err := os.Stat(TempRepoPath(destRoot, fixedPath))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return true, nil
+}
+
 // CopyRepoToTemp copies the repository directory to a temporary directory
 // repoPath is the path to the original repository
+// destRoot is the directory the copy is created in, such as RemoteTempRoot or
+// LocalTempRoot. An empty string means the system temp directory.
 // fixedLocation indicates whether to use a fixed location for the temp directory
 // fixedPath is the name of the fixed directory to use if fixedLocation is true
 // Returns the path to the temporary directory
-func CopyRepoToTemp(repoPath string, fixedLocation bool, fixedPath string) (string, bool, error) {
+func CopyRepoToTemp(repoPath string, destRoot string, fixedLocation bool, fixedPath string) (string, bool, error) {
 	if fixedLocation && !security.IsValidUsernameOrPath(fixedPath) {
 		return "", false, errors.New("invalid repository path: special characters are not allowed")
 	}
+
+	destRoot = resolveDestRoot(destRoot)
 
 	var tempDir string
 	if fixedLocation {
 		var exists bool
 		var err error
-		tempDir, exists, err = getOrCreateFixedTempDir(fixedPath)
+		tempDir, exists, err = getOrCreateFixedTempDir(destRoot, fixedPath)
 		if err != nil {
 			return "", false, err
 		}
@@ -52,7 +96,7 @@ func CopyRepoToTemp(repoPath string, fixedLocation bool, fixedPath string) (stri
 	} else {
 		// Create a temporary directory
 		var err error
-		tempDir, err = os.MkdirTemp(configuration.GetGitTempRoot(), gitRepoPrefix+"*")
+		tempDir, err = os.MkdirTemp(destRoot, gitRepoPrefix+"*")
 
 		if err != nil {
 			logging.Logger.Error("Failed to create temp directory", zap.Error(err))
@@ -61,7 +105,8 @@ func CopyRepoToTemp(repoPath string, fixedLocation bool, fixedPath string) (stri
 	}
 
 	logging.Logger.Info("Copying repository to temp directory",
-		zap.String("repoPath", repoPath))
+		zap.String("repoPath", repoPath),
+		zap.String("tempDir", tempDir))
 
 	copyStart := time.Now()
 
@@ -84,11 +129,20 @@ func CopyRepoToTemp(repoPath string, fixedLocation bool, fixedPath string) (stri
 	return tempDir, true, nil
 }
 
-// getOrCreateFixedTempDir resolves a fixed temp directory path for fixedPath.
+// resolveDestRoot returns the directory a copy is created in, defaulting to the
+// system temp directory so that an empty destRoot behaves the way os.MkdirTemp does.
+func resolveDestRoot(destRoot string) string {
+	if destRoot == "" {
+		return os.TempDir()
+	}
+	return destRoot
+}
+
+// getOrCreateFixedTempDir resolves a fixed temp directory path for fixedPath beneath destRoot.
 // It returns the path, a boolean indicating whether the directory already existed,
 // and any error encountered. If the directory already exists, the caller can skip copying.
-func getOrCreateFixedTempDir(fixedPath string) (string, bool, error) {
-	tempDir := filepath.Join(os.TempDir(), fixedPath)
+func getOrCreateFixedTempDir(destRoot string, fixedPath string) (string, bool, error) {
+	tempDir := filepath.Join(destRoot, fixedPath)
 
 	// Early exit if the directory already exists to avoid unnecessary copying and potential conflicts
 	_, err := os.Stat(tempDir)
@@ -318,7 +372,7 @@ func copyFileWithMode(src, dst string, mode os.FileMode) error {
 // LimitTempDirs ensures there are no more than maxDirs temp directories
 // by deleting the oldest directories if the limit is exceeded
 func LimitTempDirs(maxDirs int) {
-	tmpDir := "/tmp"
+	tmpDir := LocalTempRoot
 
 	logging.Logger.Debug("Checking temp directory count limit",
 		zap.Int("maxDirs", maxDirs))
@@ -407,4 +461,64 @@ func LimitTempDirs(maxDirs int) {
 	logging.Logger.Info("Temp directory limit enforcement completed",
 		zap.Int("deletedCount", deletedCount),
 		zap.Int("remaining", dirCount-deletedCount))
+}
+
+// backgroundCopies tracks the fixed destinations a call to CopyRepoToTempAsync is
+// still writing to. The destination directory is created before it is populated, so
+// its presence on disk is not enough to know that it holds a usable repository.
+var (
+	backgroundCopiesMu sync.Mutex
+	backgroundCopies   = map[string]struct{}{}
+)
+
+// CopyRepoToTempAsync starts a copy of repoPath into the fixed copy for fixedPath
+// beneath destRoot and returns straight away, leaving the copy to finish in the
+// background. It is used for the copies onto the network file share, where the caller
+// has somewhere faster to read the repository from and only needs the share to catch
+// up eventually.
+//
+// Only one background copy per destination runs at a time, so a call made while an
+// earlier copy is still running does nothing.
+func CopyRepoToTempAsync(repoPath string, destRoot string, fixedPath string) {
+	dest := TempRepoPath(destRoot, fixedPath)
+
+	backgroundCopiesMu.Lock()
+	if _, running := backgroundCopies[dest]; running {
+		backgroundCopiesMu.Unlock()
+		return
+	}
+	backgroundCopies[dest] = struct{}{}
+	backgroundCopiesMu.Unlock()
+
+	go func() {
+		defer func() {
+			backgroundCopiesMu.Lock()
+			delete(backgroundCopies, dest)
+			backgroundCopiesMu.Unlock()
+		}()
+
+		if _, _, err := CopyRepoToTemp(repoPath, destRoot, true, fixedPath); err != nil {
+			logging.Logger.Error("Background repository copy failed",
+				zap.String("repoPath", repoPath),
+				zap.String("dest", dest),
+				zap.Error(err))
+		}
+	}()
+}
+
+// TempRepoReady reports whether the fixed repository copy for fixedPath beneath
+// destRoot can be served, meaning it exists and no background copy is still writing
+// to it.
+func TempRepoReady(destRoot string, fixedPath string) (bool, error) {
+	dest := TempRepoPath(destRoot, fixedPath)
+
+	backgroundCopiesMu.Lock()
+	_, running := backgroundCopies[dest]
+	backgroundCopiesMu.Unlock()
+
+	if running {
+		return false, nil
+	}
+
+	return TempRepoExists(destRoot, fixedPath)
 }

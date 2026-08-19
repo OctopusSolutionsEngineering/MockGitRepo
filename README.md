@@ -64,6 +64,16 @@ Configuration environment variables:
 * `GIT_PROJECT_ROOT`: Base path containing source repositories (default: `/data/repos`).
 * `GIT_TEMP_ROOT`: Base path for temporary repository copies created per request (default: system temp directory).
 
+`GIT_TEMP_ROOT` usually points at a mounted network file share, where the first copy of
+a repository for a user is slow enough to time out the request that triggers it. Clones
+and fetches do not write to the repository, so when the copy on the share is missing
+they are served from a second copy under `/tmp` while the share is populated in the
+background. Pushes always use the copy on the share, and once that copy exists every
+request uses it.
+
+Anonymous users are only ever served from `/tmp`, because their copy is deleted as soon
+as the request that created it finishes and so never needs to reach the share.
+
 Clone the repository (you must provide a username in the URL):
 
 ```bash
