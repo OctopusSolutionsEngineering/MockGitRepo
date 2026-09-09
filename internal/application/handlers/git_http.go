@@ -105,9 +105,9 @@ func GitHTTPBackend(c *gin.Context) {
 
 	if userExists {
 		logging.Logger.Info("Found user " + username + ". Delaying repo cleanup.")
-	} else {
+	} else if !isReadRequest(c) {
 		defer func() {
-			logging.Logger.Info("Anonymous user " + username + " will be cleaned up immediately after request.")
+			logging.Logger.Info("Anonymous user " + username + " writes will be cleaned up immediately after request.")
 
 			err := os.RemoveAll(tempRepoPath)
 			if err != nil {
@@ -187,7 +187,7 @@ func GitHTTPBackend(c *gin.Context) {
 // theirs is made on local disk whatever the request does with it.
 func prepareTempRepo(c *gin.Context, repoPath string, userExists bool, username string) (string, bool, error) {
 	if !isReadRequest(c) {
-		// Write requests when the use does not exist complete and then are discared
+		// Write requests when the use does not exist complete and then are discarded
 		if !userExists {
 			return files.CopyRepoToTemp(repoPath, files.LocalTempRoot, false, username)
 		}
