@@ -186,14 +186,18 @@ func GitHTTPBackend(c *gin.Context) {
 // outlives the request. An anonymous user has no copy that outlives the request, so
 // theirs is made on local disk whatever the request does with it.
 func prepareTempRepo(c *gin.Context, repoPath string, userExists bool, username string) (string, bool, error) {
-	if !userExists {
-		return files.CopyRepoToTemp(repoPath, files.LocalTempRoot, false, username)
-	}
-
 	if !isReadRequest(c) {
+		// Write requests when the use does not exist complete and then are discared
+		if !userExists {
+			return files.CopyRepoToTemp(repoPath, files.LocalTempRoot, false, username)
+		}
+
+		// Authenticated users can persist their writes
 		return files.CopyRepoToTemp(repoPath, files.RemoteTempRoot(), true, username)
 	}
 
+	// all read requests are served from the persistent copy.
+	// this reflects the web ui, which shows the remote copy without any password
 	remoteReady, err := files.TempRepoReady(files.RemoteTempRoot(), username)
 	if err != nil {
 		return "", false, err
