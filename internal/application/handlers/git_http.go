@@ -27,6 +27,9 @@ const (
 )
 
 // GitHTTPBackend handles Git HTTP requests using git-http-backend CGI
+// Authenticated users (i.e., a valid username and password) will have their changes persist for a short period of time
+// Anonymous users (i.e., a valid username but any password) will be able to read the repository, but any changes they make will be discarded after the request
+// This allows an external system, like Octopus, with valid credentials to persist changes, while a read-only system, like a web browser or Argo CD, can read the repository without persisting changes
 func GitHTTPBackend(c *gin.Context) {
 	cleanup.GitHTTPBackendMu.RLock()
 	defer cleanup.GitHTTPBackendMu.RUnlock()
